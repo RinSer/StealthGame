@@ -5,6 +5,7 @@
 #include "FPSCharacter.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
+#include "FPSGameStateBase.h"
 
 AFPSGameMode::AFPSGameMode()
 {
@@ -14,29 +15,38 @@ AFPSGameMode::AFPSGameMode()
 
 	// use our custom HUD class
 	HUDClass = AFPSHUD::StaticClass();
+
+	GameStateClass = AFPSGameStateBase::StaticClass();
 }
 
 void AFPSGameMode::CompleteMission(APawn* InstigatorPawn, bool bMissionSuccess)
 {
 	if (InstigatorPawn)
 	{
-		InstigatorPawn->DisableInput(nullptr);
-
 		if (SideViewer)
 		{
 			TArray<AActor*> returnedActors;
 			UGameplayStatics::GetAllActorsOfClass(this, SideViewer, returnedActors);
 
-			APlayerController* PC = Cast<APlayerController>(InstigatorPawn->GetController());
-			if (PC && returnedActors.Num() > 0)
+			for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; It++)
 			{
-				PC->SetViewTargetWithBlend(returnedActors[0], 0.5f, EViewTargetBlendFunction::VTBlend_Cubic);
+				APlayerController* PC = It->Get();
+				if (PC && returnedActors.Num() > 0)
+				{
+					PC->SetViewTargetWithBlend(returnedActors[0], 0.5f, EViewTargetBlendFunction::VTBlend_Cubic);
+				}
 			}
 		}
 		else
 		{
 			UE_LOG(LogTemp, Warning, TEXT("No SideViewers found!!!"));
 		}
+	}
+
+	AFPSGameStateBase* GS = GetGameState<AFPSGameStateBase>();
+	if (GS)
+	{
+		GS->MulticastOnMissionComplete(InstigatorPawn, bMissionSuccess);
 	}
 
 	OnMissionCompleted(InstigatorPawn, bMissionSuccess);

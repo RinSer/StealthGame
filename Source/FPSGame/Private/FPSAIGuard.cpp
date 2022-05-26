@@ -5,6 +5,7 @@
 #include "Perception/PawnSensingComponent.h"
 #include "DrawDebugHelpers.h"
 #include "FPSGameMode.h"
+#include "Net/UnrealNetwork.h"
 
 // Sets default values
 AFPSAIGuard::AFPSAIGuard()
@@ -16,13 +17,40 @@ AFPSAIGuard::AFPSAIGuard()
 
 	PawnSensingComp->OnSeePawn.AddDynamic(this, &AFPSAIGuard::OnPawnSeen);
 	PawnSensingComp->OnHearNoise.AddDynamic(this, &AFPSAIGuard::OnHearNoise);
+
+	GuardState = EAIState::Idle;
+}
+
+void AFPSAIGuard::OnRep_GuardState()
+{
+	OnStateChanged(GuardState);
+}
+
+void AFPSAIGuard::SetGuardState(EAIState NewState)
+{
+	if (GuardState == NewState)
+		return;
+
+	GuardState = NewState;
+	OnRep_GuardState();
+}
+
+void AFPSAIGuard::ResetOrientation()
+{
+	if (GuardState == EAIState::Alerted)
+		return;
+	
+	SetActorRotation(OriginalRotation);
+
+	SetGuardState(EAIState::Idle);
 }
 
 // Called when the game starts or when spawned
 void AFPSAIGuard::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	OriginalRotation = GetActorRotation();
 }
 
 void AFPSAIGuard::OnPawnSeen(APawn* Pawn)
@@ -39,11 +67,13 @@ void AFPSAIGuard::OnPawnSeen(APawn* Pawn)
 	{
 		GM->CompleteMission(Pawn, false);
 	}
+	
+	SetGuardState(EAIState::Alerted);
 }
 
 void AFPSAIGuard::OnHearNoise(APawn* NoiseInstigator, const FVector& Location, float Volume)
 {
-	if (NoiseInstigator == nullptr)
+	if (NoiseInstigator == nullptr || GuardState == EAIState::Alerted)
 	{
 		return;
 	}
@@ -57,6 +87,11 @@ void AFPSAIGuard::OnHearNoise(APawn* NoiseInstigator, const FVector& Location, f
 	newLookAt.Pitch = 0.0f;
 	newLookAt.Roll = 0.0f;
 	SetActorRotation(newLookAt);
+
+	GetWorldTimerManager().ClearTimer(TimerHandle_ResetOrientation);
+	GetWorldTimerManager().SetTimer(TimerHandle_ResetOrientation, this, &AFPSAIGuard::ResetOrientation, 2.5f);
+
+	SetGuardState(EAIState::Suspicious);
 }
 
 // Called every frame
@@ -66,3 +101,9 @@ void AFPSAIGuard::Tick(float DeltaTime)
 
 }
 
+void AFPSAIGuard::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AFPSAIGuard, GuardState);
+}
